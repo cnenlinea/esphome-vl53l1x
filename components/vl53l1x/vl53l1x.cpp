@@ -253,7 +253,7 @@ void VL53L1XComponent::setup() {
     this->mark_failed();
     return;
   }
-  this->ranging_finished_ = ((uint16_t)(this->timing_budget_ / 1000) * 115) / 100/;
+  this->ranging_finished_ = ((uint16_t)(this->timing_budget_ / 1000) * 115) / 100;
 
   // the API triggers this change in VL53L1_init_and_start_range() once a
   // measurement is started; assumes MM1 and MM2 are disabled
