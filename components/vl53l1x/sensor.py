@@ -28,13 +28,7 @@ DISTANCE_MODES = {
 
 CONF_DISTANCE_MODE = "distance_mode"
 CONF_RANGE_STATUS = "range_status"
-
-def validate_update_interval(config):
-    if config[CONF_UPDATE_INTERVAL].total_milliseconds < 1000:
-        raise cv.Invalid(
-            f"VL53L1X update_interval must be 1 second or greater. Increase update_interval to >= 1 second"
-        )
-    return config
+CONF_TIMING_BUDGET = "timing_budget"
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema(   
@@ -53,11 +47,17 @@ CONFIG_SCHEMA = cv.All(
                 accuracy_decimals=0,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
+             cv.Optional(CONF_TIMING_BUDGET): cv.All(
+                cv.positive_time_period_microseconds,
+                cv.Range(
+                    min=cv.TimePeriod(microseconds=20000),
+                    max=cv.TimePeriod(microseconds=4294967295),
+                ),
+            ),
         }
     )
     .extend(cv.polling_component_schema("60s"))
-    .extend(i2c.i2c_device_schema(0x29)),
-    validate_update_interval,
+    .extend(i2c.i2c_device_schema(0x29))
 )
 
 async def to_code(config):
@@ -72,5 +72,8 @@ async def to_code(config):
     if CONF_RANGE_STATUS in config:
         sens = await sensor.new_sensor(config[CONF_RANGE_STATUS])    
         cg.add(var.set_range_status_sensor(sens))
+    
+    if timing_budget := config.get(CONF_TIMING_BUDGET):
+        cg.add(var.config_timing_budget(timing_budget))
 
     cg.add(var.config_distance_mode(config[CONF_DISTANCE_MODE]))

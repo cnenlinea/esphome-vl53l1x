@@ -115,8 +115,6 @@ static const uint16_t FIRMWARE__SYSTEM_STATUS                                   
 static const uint16_t IDENTIFICATION__MODEL_ID                                            = 0x010F;
 
 static const uint16_t BOOT_TIMEOUT     = 120;
-static const uint16_t TIMING_BUDGET    = 500;                          // timing budget is maximum allowable = 500 ms
-static const uint16_t RANGING_FINISHED = (TIMING_BUDGET * 115) / 100;  // add 15% extra to timing budget to ensure ranging is finished
 
 // Sensor Initialisation
 void VL53L1XComponent::setup() {
@@ -250,11 +248,12 @@ void VL53L1XComponent::setup() {
     return;
   }
 
-  if (!this->set_timing_budget(TIMING_BUDGET)) {
+  if (!this->set_timing_budget(this->timing_budget_)) {
     this->error_code_ = SET_MODE_FAILED;
     this->mark_failed();
     return;
   }
+  this->ranging_finished_ = ((uint16_t)(this->timing_budget_ / 1000) * 115) / 100
 
   // the API triggers this change in VL53L1_init_and_start_range() once a
   // measurement is started; assumes MM1 and MM2 are disabled
@@ -324,7 +323,7 @@ void VL53L1XComponent::dump_config() {
           ESP_LOGCONFIG(TAG, "  Distance Mode: LONG");
         }
       }
-      ESP_LOGD(TAG, "  Timing Budget: %ims",TIMING_BUDGET);
+      ESP_LOGD(TAG, "  Timing Budget: %ius",this->timing_budget_);
       LOG_I2C_DEVICE(this);
       LOG_UPDATE_INTERVAL(this);
       LOG_SENSOR("  ", "Distance Sensor:", this->distance_sensor_);
@@ -337,7 +336,7 @@ void VL53L1XComponent::dump_config() {
 void VL53L1XComponent::loop() {
   bool is_dataready;
   // only run loop if not updating and every LOOP_TIME
-  if ((!this->ranging_active_) || ((millis() - this->last_loop_time_) < RANGING_FINISHED) || this->is_failed() )
+  if ((!this->ranging_active_) || ((millis() - this->last_loop_time_) < this->ranging_finished_) || this->is_failed() )
     return;
 
   if (!this->check_for_dataready(&is_dataready)) {
@@ -403,7 +402,7 @@ bool VL53L1XComponent::get_sensor_id(bool* valid_sensor) {
 }
 
 bool VL53L1XComponent::set_distance_mode(DistanceMode distance_mode) {
-  uint16_t timing_budget;
+  uint32_t timing_budget;
   if (!this->get_timing_budget(&timing_budget)) {
     ESP_LOGE(TAG, "  Reading timimg budget failed when setting distance mode");
     return false;
@@ -447,9 +446,7 @@ bool VL53L1XComponent::set_distance_mode(DistanceMode distance_mode) {
 // set the measurement timing budget, which is the time allowed for one measurement
 // longer timing budget allows for more accurate measurements
 // based on VL53L1_SetMeasurementTimingBudgetMicroSeconds()
-bool VL53L1XComponent::set_timing_budget(uint16_t timing_budget_ms) {
-  uint32_t budget_us;
-  budget_us = (uint32_t)(timing_budget_ms * 1000);
+bool VL53L1XComponent::set_timing_budget(uint32_t budget_us) {
 
   // assumes PresetMode is LOWPOWER_AUTONOMOUS
   if (budget_us <= TIMING_GUARD) return false;
@@ -507,7 +504,7 @@ bool VL53L1XComponent::set_timing_budget(uint16_t timing_budget_ms) {
 
 // get the measurement timing budget in microseconds
 // based on VL53L1_SetMeasurementTimingBudgetMicroSeconds()
-bool VL53L1XComponent::get_timing_budget(uint16_t *timing_budget_ms) {
+bool VL53L1XComponent::get_timing_budget(uint32_t *budget_us) {
   // assumes PresetMode is LOWPOWER_AUTONOMOUS and these sequence steps are
   // enabled: VHV, PHASECAL, DSS1, RANGE
 
@@ -526,7 +523,7 @@ bool VL53L1XComponent::get_timing_budget(uint16_t *timing_budget_ms) {
   // VL53L1_get_timeouts_us() end
 
   uint32_t timing_budget_us = (2 * range_config_timeout_us) + TIMING_GUARD;
-  *timing_budget_ms = (uint16_t)(timing_budget_us / 1000);
+  *budget_us = timing_budget_us;
   return true;
 }
 
